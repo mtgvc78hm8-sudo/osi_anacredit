@@ -1,20 +1,18 @@
 # =============================================================================
-# OSI MISSION – AnaCredit Debtor & Group Exposure Analysis
+# OSI MISSION – AnaCredit Exposure Analysis Tool
 # =============================================================================
+# Description:
+# Python-based AnaCredit OSI tool for SQL data cleaning,
+# aggregation and exposure visualisation.
+#
 # Purpose:
-# This script connects to an OSI Mission SQL database, extracts AnaCredit-
-# style loan tape data, performs data cleaning and enrichment, calculates
-# cumulative debtor/group exposures and collateral coverage, and visualises
-# the Top-20 debtors and groups by exposure.
+# - Connect to OSI Mission SQL database
+# - Pull AnaCredit-style loan tape data
+# - Clean and enrich datasets
+# - Calculate debtor/group exposures
+# - Create Top-20 exposure visualisations
+# - Export results to Excel
 #
-# Technologies:
-# - Python
-# - pandas
-# - sqlalchemy / pyodbc
-# - matplotlib
-#
-# Author:
-# Petar Semyonov
 # =============================================================================
 
 # =============================================================================
@@ -28,8 +26,8 @@ from sqlalchemy import create_engine
 # =============================================================================
 # DATABASE CONNECTION
 # =============================================================================
-# Example SQL Server connection to OSI Mission database
-# Replace placeholders with actual credentials/server information
+# Example SQL Server connection
+# Replace placeholders with actual credentials
 
 SERVER = "ECB-OSI-SQL01"
 DATABASE = "OSI_MISSION"
@@ -46,22 +44,7 @@ engine = create_engine(connection_string)
 # =============================================================================
 # SQL QUERY
 # =============================================================================
-# Pull AnaCredit-style loan tape data from SQL database
-#
-# Assumed tables:
-# - LOAN_DATA
-# - COUNTERPARTY_DATA
-# - COLLATERAL_DATA
-#
-# Main fields:
-# - debtor_id
-# - group_id
-# - exposure amount
-# - collateral amount
-# - default status
-# - forbearance status
-# - NACE code
-# =============================================================================
+# Pull AnaCredit-style OSI mission data
 
 query = """
 
@@ -102,22 +85,25 @@ print("Rows loaded:", len(df))
 # DATA CLEANING
 # =============================================================================
 
-# Remove duplicated records
+# Remove duplicate rows
 df = df.drop_duplicates()
 
-# Remove loans with missing debtor ID
+# Remove rows without debtor ID
 df = df[df["debtor_id"].notna()]
 
-# Convert numeric fields
-numeric_cols = ["exposure_amount", "collateral_value"]
+# Convert numeric columns
+numeric_cols = [
+    "exposure_amount",
+    "collateral_value"
+]
 
 for col in numeric_cols:
     df[col] = pd.to_numeric(df[col], errors="coerce")
 
-# Replace missing values with zero
+# Replace missing numeric values with zero
 df[numeric_cols] = df[numeric_cols].fillna(0)
 
-# Standardise text fields
+# Standardise text columns
 text_cols = [
     "debtor_name",
     "group_name",
@@ -126,14 +112,18 @@ text_cols = [
 ]
 
 for col in text_cols:
-    df[col] = df[col].astype(str).str.strip().str.upper()
+    df[col] = (
+        df[col]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
 
 # =============================================================================
 # CODELIST ENRICHMENT
 # =============================================================================
-# Create descriptive labels for AnaCredit code fields
+# Create business-friendly descriptions
 
-# Product type descriptions
 product_type_map = {
     "1000": "Term Loan",
     "2000": "Overdraft",
@@ -142,19 +132,17 @@ product_type_map = {
     "5000": "Leasing"
 }
 
-# Default status descriptions
 default_status_map = {
     "0": "Performing",
     "1": "Defaulted"
 }
 
-# Forbearance descriptions
 forbearance_map = {
     "0": "Non-Forborne",
     "1": "Forborne"
 }
 
-# Create descriptive fields
+# Add description fields
 df["product_type_desc"] = (
     df["product_type_code"]
     .map(product_type_map)
@@ -176,19 +164,16 @@ df["forbearance_desc"] = (
 )
 
 # =============================================================================
-# CREATE ADDITIONAL CALCULATED FIELDS
+# CALCULATED FIELDS
 # =============================================================================
 
-# Loan-to-collateral ratio
+# Loan-to-value ratio
 df["ltv_ratio"] = (
     df["exposure_amount"] /
     df["collateral_value"].replace(0, pd.NA)
 )
 
-# Flag highly collateralised loans
-df["high_collateral_flag"] = df["ltv_ratio"] < 0.8
-
-# Exposure bucket
+# Exposure buckets
 df["exposure_bucket"] = pd.cut(
     df["exposure_amount"],
     bins=[0, 1e6, 5e6, 20e6, 100e6, float("inf")],
@@ -202,11 +187,14 @@ df["exposure_bucket"] = pd.cut(
 )
 
 # =============================================================================
-# CUMULATIVE EXPOSURES PER DEBTOR
+# DEBTOR EXPOSURE AGGREGATION
 # =============================================================================
 
 debtor_summary = (
-    df.groupby(["debtor_id", "debtor_name"], as_index=False)
+    df.groupby(
+        ["debtor_id", "debtor_name"],
+        as_index=False
+    )
     .agg({
         "exposure_amount": "sum",
         "collateral_value": "sum"
@@ -229,11 +217,14 @@ debtor_summary = debtor_summary.sort_values(
 top20_debtors = debtor_summary.head(20)
 
 # =============================================================================
-# CUMULATIVE EXPOSURES PER GROUP
+# GROUP EXPOSURE AGGREGATION
 # =============================================================================
 
 group_summary = (
-    df.groupby(["group_id", "group_name"], as_index=False)
+    df.groupby(
+        ["group_id", "group_name"],
+        as_index=False
+    )
     .agg({
         "exposure_amount": "sum",
         "collateral_value": "sum"
@@ -296,7 +287,7 @@ plt.tight_layout()
 plt.show()
 
 # =============================================================================
-# EXPORT RESULTS
+# EXPORT RESULTS TO EXCEL
 # =============================================================================
 
 output_file = "OSI_Mission_Exposure_Analysis.xlsx"
